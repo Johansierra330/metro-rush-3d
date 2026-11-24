@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#10182f">
+  <title>Metro Rush 3D</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    *{box-sizing:border-box} html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#10182f;color:#fff;font-family:system-ui,Arial}
+    #game{position:fixed;inset:0} canvas{display:block}
+    .hud{position:fixed;z-index:2;top:env(safe-area-inset-top,12px);left:0;right:0;padding:14px 16px;display:flex;justify-content:space-between;pointer-events:none;text-shadow:0 2px 5px #000}
+    .pill{background:#10182fcc;border:1px solid #ffffff35;border-radius:14px;padding:8px 12px;font-weight:800}
+    #overlay{position:fixed;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(#081126aa,#081126dd);text-align:center}
+    .panel{max-width:360px;width:100%;padding:26px 22px;border:1px solid #ffffff35;border-radius:24px;background:#172441ee;box-shadow:0 18px 60px #0008}
+    h1{font-size:32px;margin:0 0 8px} p{color:#d5e1ff;line-height:1.45}
+    button{border:0;border-radius:15px;padding:14px 22px;font-weight:900;font-size:17px;background:#ffd43b;color:#17213b;width:100%;margin-top:10px}
+    #hint{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 18px);left:0;right:0;text-align:center;z-index:2;color:#fff;text-shadow:0 2px 5px #000;font-size:13px;pointer-events:none}
+    .hidden{display:none!important}
+  </style>
+</head>
+<body>
+<div id="game"></div>
+<div class="hud"><div class="pill">🪙 <span id="coins">0</span></div><div class="pill">🏁 <span id="score">0</span> m</div></div>
+<div id="hint">Desliza ← → para cambiar de carril · ↑ saltar · ↓ deslizarte</div>
+<div id="overlay"><div class="panel">
+  <h1>🚇 METRO RUSH 3D</h1>
+  <p id="message">¡Corre, esquiva los trenes y recoge monedas!<br>Desliza el dedo para controlar al corredor.</p>
+  <button id="start">JUGAR</button>
+</div></div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+const tg = window.Telegram?.WebApp;
+tg?.ready(); tg?.expand(); tg?.setHeaderColor?.('#10182f'); tg?.setBackgroundColor?.('#10182f');
+const root=document.querySelector('#game'), scoreEl=document.querySelector('#score'), coinsEl=document.querySelector('#coins');
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x8bd7ff); scene.fog=new THREE.Fog(0x8bd7ff,28,105);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,180); camera.position.set(0,5.3,9.5); camera.lookAt(0,1,0);
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(innerWidth,innerHeight); renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap; root.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x49617a,2));
+const sun=new THREE.DirectionalLight(0xffffff,2.2); sun.position.set(-5,12,7); sun.castShadow=true; scene.add(sun);
+const mat=(color,roughness=.8)=>new THREE.MeshStandardMaterial({color,roughness});
+const groundMat=mat(0x343c4b), railMat=mat(0x8995a6), dark=mat(0x182638), red=mat(0xff654f), blue=mat(0x21a4ff), gold=mat(0xffd43b), white=mat(0xffffff);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(16,180),groundMat); floor.rotation.x=-Math.PI/2; floor.position.z=-45; floor.receiveShadow=true; scene.add(floor);
+for(let lane=-1;lane<=1;lane++){let x=lane*2.2; for(let side of [-.65,.65]){let rail=new THREE.Mesh(new THREE.BoxGeometry(.12,.12,180),railMat);rail.position.set(x+side,.12,-45);scene.add(rail)}}
+for(let z=8;z>-140;z-=4){let sleeper=new THREE.Mesh(new THREE.BoxGeometry(7,.12,.25),dark);sleeper.position.set(0,.04,z);scene.add(sleeper)}
+// Simple colorful skyline
+for(let i=0;i<34;i++){let h=3+Math.random()*12,w=2+Math.random()*3;let b=new THREE.Mesh(new THREE.BoxGeometry(w,h,3),mat(new THREE.Color().setHSL(.55+Math.random()*.18,.35,.35+Math.random()*.2)));b.position.set((i%2?1:-1)*(9+Math.random()*8),h/2-0.2,-i*5-5);scene.add(b)}
+// Player group
+const player=new THREE.Group(); scene.add(player); player.position.set(0,0,3);
+const torso=new THREE.Mesh(new THREE.BoxGeometry(.78,1.05,.48),blue);torso.position.y=1.35;torso.castShadow=true;player.add(torso);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.34,18,14),mat(0xffc99c));head.position.y=2.12;head.castShadow=true;player.add(head);
+const hair=new THREE.Mesh(new THREE.SphereGeometry(.35,16,10,0,Math.PI*2,0,Math.PI*.55),dark);hair.position.set(0,2.22,0);player.add(hair);
+for(let s of [-1,1]){let leg=new THREE.Mesh(new THREE.BoxGeometry(.25,.7,.3),mat(0x263b70));leg.position.set(s*.22,.45,0);player.add(leg);let arm=new THREE.Mesh(new THREE.BoxGeometry(.2,.75,.22),mat(0xffc99c));arm.position.set(s*.52,1.38,0);player.add(arm)}
+let lane=0, targetX=0, jump=0, slide=0, running=false, ended=false, score=0, coins=0, speed=19, spawnTimer=0, coinTimer=0;
+const obstacles=[], pickups=[];
+function makeTrain(z){let g=new THREE.Group();let body=new THREE.Mesh(new THREE.BoxGeometry(1.85,2.7,5),red);body.position.y=1.35;body.castShadow=true;g.add(body);let front=new THREE.Mesh(new THREE.BoxGeometry(1.35,.85,.08),mat(0x9deaff));front.position.set(0,1.95,2.54);g.add(front);for(let s of [-1,1]){let wheel=new THREE.Mesh(new THREE.CylinderGeometry(.23,.23,.18,12),dark);wheel.rotation.z=Math.PI/2;wheel.position.set(s*.94,.35,0);g.add(wheel)}g.position.set([-2.2,0,2.2][Math.floor(Math.random()*3)],0,z);scene.add(g);obstacles.push({mesh:g,type:'train',z})}
+function makeBarrier(z){let g=new THREE.Group();let base=new THREE.Mesh(new THREE.BoxGeometry(1.7,.8,.55),gold);base.position.y=.4;g.add(base);let post=new THREE.Mesh(new THREE.BoxGeometry(.15,1.3,.15),red);post.position.y=1;g.add(post);g.position.set([-2.2,0,2.2][Math.floor(Math.random()*3)],0,z);scene.add(g);obstacles.push({mesh:g,type:'barrier',z})}
+function makeCoins(z){let x=[-2.2,0,2.2][Math.floor(Math.random()*3)];for(let i=0;i<4;i++){let m=new THREE.Mesh(new THREE.TorusGeometry(.28,.09,10,18),gold);m.position.set(x,1.25,z-i*1.25);m.rotation.y=Math.PI/2;scene.add(m);pickups.push(m)}}
+function reset(){obstacles.forEach(o=>scene.remove(o.mesh));pickups.forEach(p=>scene.remove(p));obstacles.length=0;pickups.length=0;lane=0;targetX=0;player.position.set(0,0,3);jump=0;slide=0;score=0;coins=0;speed=19;spawnTimer=0;coinTimer=0;scoreEl.textContent='0';coinsEl.textContent='0';ended=false}
+function start(){reset();running=true;document.querySelector('#overlay').classList.add('hidden')}
+function gameOver(){running=false;ended=true;document.querySelector('#message').innerHTML=`¡Buen intento!<br>Distancia: <b>${Math.floor(score)} m</b> · Monedas: <b>${coins}</b>`;document.querySelector('#start').textContent='VOLVER A JUGAR';document.querySelector('#overlay').classList.remove('hidden');tg?.HapticFeedback?.notificationOccurred?.('error')}
+document.querySelector('#start').addEventListener('click',start);
+function move(d){if(!running)return;lane=Math.max(-1,Math.min(1,lane+d));targetX=lane*2.2}
+function action(a){if(!running)return;if(a==='jump'&&jump<=0)jump=1.05;if(a==='slide')slide=.65}
+let touchX=0,touchY=0;
+addEventListener('touchstart',e=>{touchX=e.changedTouches[0].clientX;touchY=e.changedTouches[0].clientY},{passive:true});
+addEventListener('touchend',e=>{let dx=e.changedTouches[0].clientX-touchX,dy=e.changedTouches[0].clientY-touchY;if(Math.max(Math.abs(dx),Math.abs(dy))<24)return;if(Math.abs(dx)>Math.abs(dy))move(dx>0?1:-1);else action(dy<0?'jump':'slide')},{passive:true});
+addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='a')move(-1);if(e.key==='ArrowRight'||e.key==='d')move(1);if(e.key==='ArrowUp'||e.key===' ')action('jump');if(e.key==='ArrowDown'||e.key==='s')action('slide')});
+let last=performance.now();
+function animate(now){requestAnimationFrame(animate);let dt=Math.min((now-last)/1000,.04);last=now;
+ if(running){score+=dt*speed*.7;speed=Math.min(32,19+score*.012);scoreEl.textContent=Math.floor(score);spawnTimer-=dt;coinTimer-=dt;if(spawnTimer<=0){Math.random()>.42?makeTrain(-95):makeBarrier(-95);spawnTimer=Math.max(.75,1.5-score/450)}if(coinTimer<=0){makeCoins(-75);coinTimer=2.2}
+ player.position.x+=(targetX-player.position.x)*Math.min(1,dt*14);player.rotation.z=(targetX-player.position.x)*-.08;
+ if(jump>0){jump-=dt*2.3;player.position.y=Math.max(0,Math.sin((1.05-jump)*Math.PI/1.05)*1.65)}else player.position.y=0;
+ if(slide>0){slide-=dt;player.scale.y=.58}else player.scale.y=1;
+ obstacles.forEach(o=>{o.mesh.position.z+=speed*dt;if(o.mesh.position.z>7){scene.remove(o.mesh);o.dead=true}if(Math.abs(o.mesh.position.z-3)<1.05&&Math.abs(o.mesh.position.x-player.position.x)<1.15){if(o.type==='train'||(o.type==='barrier'&&player.position.y<.75&&slide<=0))gameOver()}});
+ for(let o of obstacles.filter(o=>o.dead))obstacles.splice(obstacles.indexOf(o),1);
+ pickups.forEach(p=>{p.position.z+=speed*dt;p.rotation.z+=dt*3;if(p.position.z>6){scene.remove(p);p.userData.dead=true}if(Math.abs(p.position.z-3)<1&&Math.abs(p.position.x-player.position.x)<1){scene.remove(p);p.userData.dead=true;coins++;coinsEl.textContent=coins;tg?.HapticFeedback?.impactOccurred?.('light')}});
+ for(let p of pickups.filter(p=>p.userData.dead))pickups.splice(pickups.indexOf(p),1);
+ }
+ renderer.render(scene,camera)}
+requestAnimationFrame(animate);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script>
+</body>
+</html>
